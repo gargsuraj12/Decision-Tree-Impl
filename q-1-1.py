@@ -3,8 +3,18 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import random
 from pprint import pprint
+import statistics as st
 
-# global YES = 
+def getAccuracy(tn, fp, fn, tp):
+    num = tp+tn
+    deno = tn+fp+fn+tp
+    return (num/deno)*100
+
+def getPrecision(tp, fp):
+    return (tp/(tp+fp))*100
+
+def getRecall(tp, fn):
+    return (tp/(tp+fn))*100
 
 class InternalNode:
     def __init__(self, attrName):
@@ -94,13 +104,7 @@ def buildDecisionTree(data, headerList, depth, edgeLabel):
     # Base cases
     if isDataPure(data) or (len(headerList) == 1 and headerList[0] == 'left'):#
         label = returnLabel(data)
-        leaf = LeafNode(label)
-        # print("Base condition reached at depth: ",depth," and label is: ", label)
-        # if label == 0:
-        #     leaf = LeafNode("No")
-        # else:
-        #     leaf = LeafNode("Yes")
-        return leaf
+        return LeafNode(label)
 
     # Create N-ary Tree
     else:
@@ -127,8 +131,7 @@ def buildDecisionTree(data, headerList, depth, edgeLabel):
 def validateExample(root, header, example):
     # Base condition - We've reached to a leaf node
     if isinstance(root, LeafNode):
-        print(root.label)
-        # return root.label
+        return root.label
     
     # Recurse
     else:
@@ -139,15 +142,17 @@ def validateExample(root, header, example):
         feature = example[index]
         example = np.delete(example, index, axis=0)
         nextRoot = root.childDict[feature]
-        validateExample(nextRoot, header, example)
+        return validateExample(nextRoot, header, example)
 
 
 
 # main segment starts here
 if __name__ == '__main__':
     df = pd.read_csv("data.csv")
-    trainData, testData = splitTrainTest(df, 0.01)
-    data = trainData.values[:, 5:10]
+    trainData, testData = splitTrainTest(df, 0.2)
+    # trainData, testData = df,df
+    # data = trainData.values[:, 5:10]
+    data = trainData.values
     # headerList = list(df)
     headerList = df.columns.values
     headerList = headerList[5:]
@@ -174,5 +179,23 @@ if __name__ == '__main__':
         header = list(headerList)
         # print(testData.values[i, 5:10][-1])
         example  = testData.values[i, 5:9]
+        # example  = testData.values[i, 1:9]
         predicted = validateExample(root, header, example)
-        print("Actual is: ", actual, " and predicted is: ", predicted)
+        # print("Actual is: ", actual, " and predicted is: ", predicted)
+        if actual == 0 and predicted == 0:
+            tn += 1
+        elif actual == 0 and predicted == 1:
+            fp += 1
+        elif actual == 1 and predicted == 0:
+            fn += 1
+        else:
+            tp += 1
+
+    accuracy = getAccuracy(tn, fp, fn, tp)         
+    # precision = getPrecision(tp, fp)
+    # recall = getRecall(tp, fn)
+
+    print("Accuracy is: ", accuracy)
+    # print("Precision is: ", precision)
+    # print("Recall is: ", recall)
+    # print("F1 Measure is: ", st.harmonic_mean(precision, recall))
