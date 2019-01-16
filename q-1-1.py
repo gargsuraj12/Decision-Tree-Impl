@@ -20,10 +20,14 @@ class InternalNode:
     def __init__(self, attrName):
         self.attributeName = attrName
         self.childDict = {}
+        self.positives = 0
+        self.negatives = 0
 
 class LeafNode:
-    def __init__(self, label):
-        self.label = label     
+    def __init__(self, label, positives, negatives):
+        self.label = label
+        self.positives = positives
+        self.negatives = negatives
 
 # Splits the raw data into training data set and test data set
 def splitTrainTest(df, testSize):
@@ -46,16 +50,28 @@ def isDataPure(data):
 
 # Returns the label of the pure data
 # If current node is leaf and data is impure then returns the label which occurs most
-def returnLabel(data):
+def setLabel(data):
     leftCol = data[:,-1]
     uniqueLabels, labelCounts = np.unique(leftCol, return_counts=True)
     # print(uniqueLabels, labelCounts)
+    label = 0
+    positives = 0
+    negatives = 0
     if len(uniqueLabels) == 1:
-        return uniqueLabels[0]
+        label =  uniqueLabels[0]
     else:
         if labelCounts[0] > labelCounts[1]:
-            return uniqueLabels[0]
-    return uniqueLabels[1]        
+            label = uniqueLabels[0]
+        else:    
+            label = uniqueLabels[1]
+    for i in range(len(uniqueLabels)):
+        if uniqueLabels[i] == 0:
+            negatives += labelCounts[i]
+        if uniqueLabels[i] == 1:
+            positives += labelCounts[i]
+    leaf = LeafNode(label, positives, negatives)
+    return leaf  
+    
 
 # Calculates the overall entropy of the given data/label
 def calcOverallEntropy(data):
@@ -102,9 +118,11 @@ def nextParentNodeAttribute(data):
 def buildDecisionTree(data, headerList, depth, edgeLabel):
     
     # Base cases
-    if isDataPure(data) or (len(headerList) == 1 and headerList[0] == 'left'):#
-        label = returnLabel(data)
-        return LeafNode(label)
+    if isDataPure(data) or (len(headerList) == 1 ): # and headerList[0] == 'left'
+        # label = returnLabel(data)
+        # return LeafNode(label)
+        leaf = setLabel(data)
+        return leaf
 
     # Create N-ary Tree
     else:
@@ -117,17 +135,23 @@ def buildDecisionTree(data, headerList, depth, edgeLabel):
         uniqueFeatureValues = np.unique(selectedColumn)
         headerList = np.delete(headerList, index, axis = 0)
         # print("and features are: ", uniqueFeatureValues)
+        
         for i in range(len(uniqueFeatureValues)):
             feature = uniqueFeatureValues[i]
             # discarding all the rows containing particular feature values
-            newData = data[np.logical_not(data[:, index] == feature)]
+            # newData = data[np.logical_not(data[:, index] == feature)]
+            newData = data[data[:, index] == feature]
             # dropping the selected attribute
             newData = np.delete(newData, index, axis=1)
             childNode = buildDecisionTree(newData, headerList, depth+1, feature)
+            root.positives += childNode.positives
+            root.negatives += childNode.negatives
             root.childDict.update({uniqueFeatureValues[i]:childNode})
+
         return root
 
 
+# Execution validation set
 def validateExample(root, header, example):
     # Base condition - We've reached to a leaf node
     if isinstance(root, LeafNode):
@@ -135,38 +159,34 @@ def validateExample(root, header, example):
     
     # Recurse
     else:
-        # print("Root's attribute name is: ", root.attributeName)
-        # print("Length of the child nodes are: ", len(root.childDict))
         index = header.index(root.attributeName)
         header.pop(index)
         feature = example[index]
         example = np.delete(example, index, axis=0)
-        nextRoot = root.childDict[feature]
-        return validateExample(nextRoot, header, example)
+        try:
+            # key found
+            nextRoot = root.childDict[feature]
+            return validateExample(nextRoot, header, example)
+        except KeyError:
+            # key not found..
+            if root.positives > root.negatives:
+                return 1
+            else:
+                return 0
+        
 
-
-
+# Note : Handling of blank values in test example remianing
 # main segment starts here
 if __name__ == '__main__':
     df = pd.read_csv("data.csv")
-    trainData, testData = splitTrainTest(df, 0.2)
-    # trainData, testData = df,df
-    # data = trainData.values[:, 5:10]
+    # trainData, testData = splitTrainTest(df, 0.2)
+    trainData, testData = df,df
+    # data = trainData.values[:, 4:10]
     data = trainData.values
-    # headerList = list(df)
     headerList = df.columns.values
-    headerList = headerList[5:]
-    # print(headerList)
-    # print(data)
-    #[trainData.time_spend_company > 2]
-    # print(testData.values)
-    # print(isDataPure(trainData.values))
-    # print(returnLabel(data))
-    # calcOverallEntropy(data)
-    # entropy = calcColumnAvgEntropy(data, 2)
-    # print(entropy)
-    # print(nextParentNodeAttribute(data))
+    # headerList = headerList[4:]
     
+    # Call to build decision tree
     root = buildDecisionTree(data, headerList, 1, None)
 
     tp = 0
@@ -175,13 +195,11 @@ if __name__ == '__main__':
     fn = 0
 
     for i in range(len(testData)):
-        actual = testData.values[i, 5:10][-1]
+        actual = testData.values[i, :][-1]
         header = list(headerList)
-        # print(testData.values[i, 5:10][-1])
-        example  = testData.values[i, 5:9]
-        # example  = testData.values[i, 1:9]
+        # example  = testData.values[i, 4:9]
+        example  = testData.values[i, 0:9]
         predicted = validateExample(root, header, example)
-        # print("Actual is: ", actual, " and predicted is: ", predicted)
         if actual == 0 and predicted == 0:
             tn += 1
         elif actual == 0 and predicted == 1:
@@ -191,11 +209,17 @@ if __name__ == '__main__':
         else:
             tp += 1
 
+    print("True Negatives: ", tn)
+    print("False Positves: ", fp)
+    print("False Negatives: ", fn)
+    print("True Positives: ", tp)
+    
     accuracy = getAccuracy(tn, fp, fn, tp)         
-    # precision = getPrecision(tp, fp)
-    # recall = getRecall(tp, fn)
+    precision = getPrecision(tp, fp)
+    recall = getRecall(tp, fn)
 
     print("Accuracy is: ", accuracy)
-    # print("Precision is: ", precision)
-    # print("Recall is: ", recall)
-    # print("F1 Measure is: ", st.harmonic_mean(precision, recall))
+    print("Precision is: ", precision)
+    print("Recall is: ", recall)
+    l = [precision, recall]
+    print("F1 Measure is: ", st.harmonic_mean(l))
