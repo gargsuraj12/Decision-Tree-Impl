@@ -11,6 +11,11 @@ LESS_THAN_EQUAL = 0
 GREATER_THAN = 1
 CAT_ATTR = 0
 NUM_ATTR = 1
+ENTROPY = 0
+GINI_IMPURITY = 1
+MISCLASSIFICATION_RATE = 2
+
+
 category_dict = {}
 
 def getAccuracy(tn, fp, fn, tp):
@@ -30,8 +35,6 @@ class InternalNode:
         self.attributeName = attrName
         self.childDict = {}
         self.isNodeNumerical = False
-        # self.leftChild = None
-        # self.rightChild = None
         self.splitVal = splitVal
         self.positives = 0
         self.negatives = 0
@@ -43,7 +46,7 @@ class LeafNode:
         self.positives = positives
         self.negatives = negatives
 
-
+# Replacing the values of the numerical attribute with 0s and 1s
 def modifyNumAttr(data, colNum, splitVal):
     rows,_ = data.shape
     for i in range(rows):
@@ -80,7 +83,6 @@ def isDataPure(data):
 def setLabel(data):
     leftCol = data[:,-1]
     uniqueLabels, labelCounts = np.unique(leftCol, return_counts=True)
-    # print(uniqueLabels, labelCounts)
     label = 0
     positives = 0
     negatives = 0
@@ -99,7 +101,7 @@ def setLabel(data):
     leaf = LeafNode(label, positives, negatives)
     return leaf  
 
-
+# Splits the numerical attribute on the basis of the value
 def splitNumAttr(data, colNum, val):
     dataBelow = list()
     dataAbove = list()
@@ -113,23 +115,43 @@ def splitNumAttr(data, colNum, val):
     dataAbove = np.array(dataAbove)        
     return dataBelow, dataAbove            
 
-def splitCatAttr(data, colNum, val):
-    dataBelow = list()
-    dataAbove = list()
-    rows,_ = data.shape
-    for i in range(rows):
-        if data[i, colNum] == val:
-            dataAbove.append(data[i])
-        else:
-            dataBelow.append(data[i])
-    dataBelow = np.array(dataBelow)
-    dataAbove = np.array(dataAbove)
-    return dataBelow, dataAbove
+
+def calcOverallMiscRate(data):
+    cols = data.shape
+    if(len(cols) == 1):
+        leftCol = data
+    else:
+        leftCol = data[:, -1]
+
+    _, labelCounts = np.unique(leftCol, return_counts=True)
+    sampleSpace = len(leftCol)
+    probabilities = labelCounts / sampleSpace
+    # print(probabilities)
+    if len(probabilities) == 0:
+        return 1
+    maxProb = np.max(probabilities)
+    return (1 - maxProb)
+
+def calcOverallGiniImpurity(data):
+    cols = data.shape
+    if(len(cols) == 1):
+        leftCol = data
+    else:
+        leftCol = data[:, -1]
+
+    _, labelCounts = np.unique(leftCol, return_counts=True)
+    sampleSpace = len(leftCol)
+    probabilities = labelCounts / sampleSpace
+    if len(probabilities):
+        return 1
+    # print(probabilities)
+    impurity = 1 - sum(np.square(probabilities))
+    return impurity
+
 
 # Calculates the overall entropy of the given data/label
 def calcOverallEntropy(data):
     cols = data.shape
-    # print(len(cols))
     if(len(cols) == 1):
         leftCol = data
     else:
@@ -139,53 +161,77 @@ def calcOverallEntropy(data):
     _, labelCounts = np.unique(leftCol, return_counts=True)
     sampleSpace = len(leftCol)
     probabilities = labelCounts / sampleSpace
+    if len(probabilities) == 0:
+        return 0
     entropy = sum(probabilities * -(np.log2(probabilities)))
     return entropy
 
+
 # Calculates the entropy of a Categorical column/attribute
-def calcCatAttrAvgEntropy(data, colNum):
+def calcCatAttrAvgImpurity(data, colNum, impurityType):
     column = data[:,colNum]
     sampleSpace = len(column)
     featureValues, featureCounts = np.unique(column, return_counts=True)
-    # print("Unique Feature values for col num: ", colNum, " are: ", featureValues)
     probabilities = featureCounts / sampleSpace
-    featureEntropies = []
+    featureImpurities = []
+
     # Calculating entropy of each feature of the column
     for val in featureValues:
-        # print(val)
         columnData = data[column == val]
-        entropy = calcOverallEntropy(columnData)
-        featureEntropies.append(entropy)
-    # print(featureEntropies)
-    avgEntropy = sum(probabilities*featureEntropies)
-    return None,avgEntropy
+        # impurity = calcOverallEntropy(columnData)
+        if impurityType == ENTROPY:
+            impurity = calcOverallEntropy(columnData)
+        elif impurityType == GINI_IMPURITY:
+            impurity = calcOverallGiniImpurity(columnData)
+        else:
+            impurity = calcOverallMiscRate(columnData)
+
+        featureImpurities.append(impurity)
+
+    avgImpurity = sum(probabilities*featureImpurities)
+    return None,avgImpurity
 
 
 # Best splits(Using Bruteforce Method) the numerical attribute and calculates the average entropy
-def calcNumAttrAvgEntropy(data, colNum):
+def calcNumAttrAvgImpurity(data, colNum, impurityType):
     column = data[:, colNum]
     splitPoint = None
-    avgEntropy = 1000000
+    avgImpurity = 1000000
     uniqueFeatureValues = np.unique(column)
+
     # Find the best split position for this column
     for val in uniqueFeatureValues:
-        # columnData = copy.deepcopy(data[:, colNum])
         dataBelow, dataAbove = splitNumAttr(data, colNum, val)
-        belowEntropy = calcOverallEntropy(dataBelow)
-        aboveEntropy = calcOverallEntropy(dataAbove)
-        t_entropy = belowEntropy + (aboveEntropy-belowEntropy)/2
-        # print("Entropy for ", val, " is: ", t_entropy)
-        if t_entropy < avgEntropy:
-            avgEntropy = t_entropy
+        if impurityType == ENTROPY:
+            belowImpurity = calcOverallEntropy(dataBelow)
+            aboveImpurity = calcOverallEntropy(dataAbove)
+        elif impurityType == GINI_IMPURITY:
+            belowImpurity = calcOverallGiniImpurity(dataBelow)
+            aboveImpurity = calcOverallGiniImpurity(dataAbove)
+        else:
+            # print("For val: ", val)
+            # print("Calling calcOverallMiscRate() for dataAbove")
+            aboveImpurity = calcOverallMiscRate(dataAbove)
+            # print("Calling calcOverallMiscRate() for dataBelow")
+            belowImpurity = calcOverallMiscRate(dataBelow)
+            
+        t_entropy = (belowImpurity + aboveImpurity) / 2
+        if t_entropy < avgImpurity:
+            avgImpurity = t_entropy
             splitPoint = val
-    # print("Final entropy for value: ", splitPoint, " is: ", avgEntropy)
-    return splitPoint, avgEntropy
+
+    return splitPoint, avgImpurity
 
 
 
 # Return the index of the attribute having the maximun information gain with the supplied data
-def nextParentNodeAttribute(data, headerList):
-    overallEntropy = calcOverallEntropy(data)
+def nextParentNodeAttribute(data, headerList, impurityType):
+    if impurityType == ENTROPY:
+        overallImpurity = calcOverallEntropy(data)
+    elif impurityType == GINI_IMPURITY:
+        overallImpurity = calcOverallGiniImpurity(data)
+    else:
+        overallImpurity = calcOverallMiscRate(data)    
     infoGainList = []
     splitValList = []
     cols = data.shape[1]-1
@@ -193,12 +239,12 @@ def nextParentNodeAttribute(data, headerList):
     # Excluding 'left' column
     for i in range(cols):
         if category_dict[headerList[i]] == CAT_ATTR:
-            splitVal, colAvgEntropy = calcCatAttrAvgEntropy(data, i)
+            splitVal, colAvgEntropy = calcCatAttrAvgImpurity(data, i, impurityType)
         else:    
-            splitVal, colAvgEntropy = calcNumAttrAvgEntropy(data, i)
+            splitVal, colAvgEntropy = calcNumAttrAvgImpurity(data, i, impurityType)
         
         splitValList.append(splitVal)
-        infoGainList.append(overallEntropy-colAvgEntropy)
+        infoGainList.append(overallImpurity-colAvgEntropy)
 
     # print(infoGainList)
     maxEntropy = max(infoGainList)
@@ -208,7 +254,7 @@ def nextParentNodeAttribute(data, headerList):
 
 
 # Building Decision Tree
-def buildDecisionTree(data, headerList, depth, edgeLabel):
+def buildDecisionTree(data, headerList, depth, edgeLabel, impurityType):
     rows,_ = data.shape
     # Base cases
     if isDataPure(data) or (len(headerList) <= 1) or rows<=5: #  or rows<=5 and headerList[0] == 'left'
@@ -217,10 +263,11 @@ def buildDecisionTree(data, headerList, depth, edgeLabel):
 
     # Create N-ary Tree
     else:
-        splitVal, index = nextParentNodeAttribute(data, headerList)
+        splitVal, index = nextParentNodeAttribute(data, headerList, impurityType)
         attrName = headerList[index]
         root = InternalNode(attrName, splitVal)
 
+        # Cheking if the selected attibute is numerical attribute
         if category_dict[headerList[index]] == NUM_ATTR:
             root.isNodeNumerical = True
             data = modifyNumAttr(data, index, splitVal)
@@ -235,8 +282,8 @@ def buildDecisionTree(data, headerList, depth, edgeLabel):
             newData = data[data[:, index] == feature]
             # dropping the selected attribute
             newData = np.delete(newData, index, axis=1)
-
-            childNode = buildDecisionTree(newData, headerList, depth+1, feature)    # Recursion
+            # Recursion
+            childNode = buildDecisionTree(newData, headerList, depth+1, feature, impurityType)
             
             root.positives += childNode.positives
             root.negatives += childNode.negatives
@@ -254,8 +301,6 @@ def validateExample(root, header, example):
     # Recurse
     else:
         index = header.index(root.attributeName)
-        # val = example[index]    
-        newRoot = None
         header.pop(index)
         feature = example[index]
         if root.isNodeNumerical == True:
@@ -289,13 +334,13 @@ def main():
             category_dict[headerList[i]] = CAT_ATTR
         else:
             category_dict[headerList[i]] = NUM_ATTR
-
-    # print(category_dict)        
+    
     # Call to build decision tree
-    root = buildDecisionTree(data, headerList, 1, None)
+    root = buildDecisionTree(data, headerList, 1, None, ENTROPY)
 
     tp, tn, fp, fn = 0, 0, 0, 0
 
+    # Running validation set
     for i in range(len(testData)):
         actual = testData.values[i, :][-1]
         header = list(headerList)
@@ -330,12 +375,12 @@ def test():
     df = pd.read_csv("data.csv")
     # trainData, testData = splitTrainTest(df, 0.01)
     data = df.values[0:100, :]
-    # print(data)
-    
-    splitVal, avgEntropy = calcNumAttrAvgEntropy(data, 0)
-    print("For col 0 splitPoint is: ", splitVal, " & entropy is: ", avgEntropy)
-    data = modifyNumAttr(data, 0, splitVal)
     print(data)
+    # calcOverallGiniImpurity(data)
+    # print(calcOverallMiscRate(data))
+    splitPoint, avgImpurity = calcNumAttrAvgImpurity(data, 2, MISCLASSIFICATION_RATE)
+    print("SplitPoint is: ", splitPoint, " and MiscRate is: ", avgImpurity)
+    
 
 # Note : Handling of blank values in test example remianing
 # main segment starts here
