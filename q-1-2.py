@@ -28,10 +28,10 @@ def getRecall(tp, fn):
 class InternalNode:
     def __init__(self, attrName, splitVal):
         self.attributeName = attrName
-        # self.childDict = {}
+        self.childDict = {}
         self.isNodeNumerical = False
-        self.leftChild = None
-        self.rightChild = None
+        # self.leftChild = None
+        # self.rightChild = None
         self.splitVal = splitVal
         self.positives = 0
         self.negatives = 0
@@ -113,7 +113,6 @@ def splitNumAttr(data, colNum, val):
     dataAbove = np.array(dataAbove)        
     return dataBelow, dataAbove            
 
-
 def splitCatAttr(data, colNum, val):
     dataBelow = list()
     dataAbove = list()
@@ -143,6 +142,24 @@ def calcOverallEntropy(data):
     entropy = sum(probabilities * -(np.log2(probabilities)))
     return entropy
 
+# Calculates the entropy of a Categorical column/attribute
+def calcCatAttrAvgEntropy(data, colNum):
+    column = data[:,colNum]
+    sampleSpace = len(column)
+    featureValues, featureCounts = np.unique(column, return_counts=True)
+    # print("Unique Feature values for col num: ", colNum, " are: ", featureValues)
+    probabilities = featureCounts / sampleSpace
+    featureEntropies = []
+    # Calculating entropy of each feature of the column
+    for val in featureValues:
+        # print(val)
+        columnData = data[column == val]
+        entropy = calcOverallEntropy(columnData)
+        featureEntropies.append(entropy)
+    # print(featureEntropies)
+    avgEntropy = sum(probabilities*featureEntropies)
+    return None,avgEntropy
+
 
 # Best splits(Using Bruteforce Method) the numerical attribute and calculates the average entropy
 def calcNumAttrAvgEntropy(data, colNum):
@@ -153,11 +170,7 @@ def calcNumAttrAvgEntropy(data, colNum):
     # Find the best split position for this column
     for val in uniqueFeatureValues:
         # columnData = copy.deepcopy(data[:, colNum])
-        if category_dict[colNum] == CAT_ATTR:
-            dataBelow, dataAbove = splitCatAttr(data, colNum, val)
-        else:
-            dataBelow, dataAbove = splitNumAttr(data, colNum, val)
-
+        dataBelow, dataAbove = splitNumAttr(data, colNum, val)
         belowEntropy = calcOverallEntropy(dataBelow)
         aboveEntropy = calcOverallEntropy(dataAbove)
         t_entropy = belowEntropy + (aboveEntropy-belowEntropy)/2
@@ -171,14 +184,19 @@ def calcNumAttrAvgEntropy(data, colNum):
 
 
 # Return the index of the attribute having the maximun information gain with the supplied data
-def nextParentNodeAttribute(data):
+def nextParentNodeAttribute(data, headerList):
     overallEntropy = calcOverallEntropy(data)
     infoGainList = []
     splitValList = []
     cols = data.shape[1]-1
+    splitVal, colAvgEntropy = None, None
     # Excluding 'left' column
     for i in range(cols):
-        splitVal, colAvgEntropy = calcAttrAvgEntropy(data, i)
+        if category_dict[headerList[i]] == CAT_ATTR:
+            splitVal, colAvgEntropy = calcCatAttrAvgEntropy(data, i)
+        else:    
+            splitVal, colAvgEntropy = calcNumAttrAvgEntropy(data, i)
+        
         splitValList.append(splitVal)
         infoGainList.append(overallEntropy-colAvgEntropy)
 
@@ -194,27 +212,46 @@ def buildDecisionTree(data, headerList, depth, edgeLabel):
     rows,_ = data.shape
     # print(data)
     # Base cases
-    if isDataPure(data) or rows<=5 or (len(headerList) == 1 ): # and headerList[0] == 'left'
+    if isDataPure(data) or (len(headerList) <= 1) or rows<=5: #  or rows<=5 and headerList[0] == 'left'
         leaf = setLabel(data)
         return leaf
 
     # Create N-ary Tree
     else:
-        splitVal, index = nextParentNodeAttribute(data)
+        splitVal, index = nextParentNodeAttribute(data, headerList)
         # print("Selected index is: ", index)
         attrName = headerList[index]
         # print("Selected Node at depth: ",depth," is: ", attrName)
         root = InternalNode(attrName, splitVal)
-        dataBelow, dataAbove = None, None
+        # dataBelow, dataAbove = None, None
 
-        if category_dict[index] == NUM_ATTR:
-            
+        if category_dict[headerList[index]] == NUM_ATTR:
             root.isNodeNumerical = True
+            data = modifyNumAttr(data, index, splitVal)
 
-        root.leftChild = buildDecisionTree(dataAbove, headerList, depth+1, LESS_THAN_EQUAL)
-        root.rightChild = buildDecisionTree(dataBelow, headerList, depth+1, GREATER_THAN)
-        root.positives = root.leftChild.positives + root.rightChild.positives
-        root.negatives = root.leftChild.negatives + root.rightChild.negatives
+        selectedColumn = data[:, index]
+        uniqueFeatureValues = np.unique(selectedColumn)
+        headerList = np.delete(headerList, index, axis = 0)
+        # print("and features are: ", uniqueFeatureValues)
+        
+        for i in range(len(uniqueFeatureValues)):
+            feature = uniqueFeatureValues[i]
+            # discarding all the rows containing particular feature values
+            newData = data[data[:, index] == feature]
+            # dropping the selected attribute
+            newData = np.delete(newData, index, axis=1)
+
+            childNode = buildDecisionTree(newData, headerList, depth+1, feature)    # Recursion
+            
+            root.positives += childNode.positives
+            root.negatives += childNode.negatives
+            root.childDict.update({feature:childNode})
+
+
+        # root.leftChild = buildDecisionTree(dataAbove, headerList, depth+1, LESS_THAN_EQUAL)
+        # root.rightChild = buildDecisionTree(dataBelow, headerList, depth+1, GREATER_THAN)
+        # root.positives = root.leftChild.positives + root.rightChild.positives
+        # root.negatives = root.leftChild.negatives + root.rightChild.negatives
 
         return root
 
@@ -228,35 +265,26 @@ def validateExample(root, header, example):
     # Recurse
     else:
         index = header.index(root.attributeName)
-        val = example[index]
+        # val = example[index]    
         newRoot = None
+        header.pop(index)
+        feature = example[index]
         if root.isNodeNumerical == True:
-            # Numerical Node
-            if val <= root.splitVal:
-                newRoot = root.leftChild
+            if feature <= root.splitVal:
+                feature = 0
             else:
-                newRoot = root.rightChild
-        else:
-            # Categorical Node
-            if val == root.splitVal:
-                newRoot = root.leftChild
+                feature = 1
+        example = np.delete(example, index, axis=0)
+        try:
+            # key found
+            nextRoot = root.childDict[feature]
+            return validateExample(nextRoot, header, example)
+        except KeyError:
+            # key not found..
+            if root.positives > root.negatives:
+                return 1
             else:
-                newRoot = root.rightChild
-        return validateExample(newRoot, header, example)
-        
-        # header.pop(index)
-        # feature = example[index]
-        # example = np.delete(example, index, axis=0)
-        # try:
-        #     # key found
-        #     nextRoot = root.childDict[feature]
-        #     return validateExample(nextRoot, header, example)
-        # except KeyError:
-        #     # key not found..
-        #     if root.positives > root.negatives:
-        #         return 1
-        #     else:
-        #         return 0
+                return 0
         
 
 def main():
@@ -269,47 +297,44 @@ def main():
     for i in range(cols):
         uniqueFeatureValues = np.unique(data[:, i])
         if len(uniqueFeatureValues) <= CAT_ATTR_THRESHOLD:
-            category_dict[i] = CAT_ATTR
+            category_dict[headerList[i]] = CAT_ATTR
         else:
-            category_dict[i] = NUM_ATTR
+            category_dict[headerList[i]] = NUM_ATTR
 
     # print(category_dict)        
     # Call to build decision tree
     root = buildDecisionTree(data, headerList, 1, None)
 
-    tp = 0
-    tn = 0
-    fp = 0
-    fn = 0
+    tp, tn, fp, fn = 0, 0, 0, 0
 
-    # for i in range(len(testData)):
-    #     actual = testData.values[i, :][-1]
-    #     header = list(headerList)
-    #     example  = testData.values[i, 0:9]
-    #     predicted = validateExample(root, header, example)
-    #     if actual == 0 and predicted == 0:
-    #         tn += 1
-    #     elif actual == 0 and predicted == 1:
-    #         fp += 1
-    #     elif actual == 1 and predicted == 0:
-    #         fn += 1
-    #     else:
-    #         tp += 1
+    for i in range(len(testData)):
+        actual = testData.values[i, :][-1]
+        header = list(headerList)
+        example  = testData.values[i, 0:9]
+        predicted = validateExample(root, header, example)
+        if actual == 0 and predicted == 0:
+            tn += 1
+        elif actual == 0 and predicted == 1:
+            fp += 1
+        elif actual == 1 and predicted == 0:
+            fn += 1
+        else:
+            tp += 1
 
-    # print("True Negatives: ", tn)
-    # print("False Positves: ", fp)
-    # print("False Negatives: ", fn)
-    # print("True Positives: ", tp)
+    print("True Negatives: ", tn)
+    print("False Positves: ", fp)
+    print("False Negatives: ", fn)
+    print("True Positives: ", tp)
     
-    # accuracy = getAccuracy(tn, fp, fn, tp)         
-    # precision = getPrecision(tp, fp)
-    # recall = getRecall(tp, fn)
+    accuracy = getAccuracy(tn, fp, fn, tp)         
+    precision = getPrecision(tp, fp)
+    recall = getRecall(tp, fn)
 
-    # print("Accuracy is: ", accuracy)
-    # print("Precision is: ", precision)
-    # print("Recall is: ", recall)
-    # l = [precision, recall]
-    # print("F1 Measure is: ", st.harmonic_mean(l))
+    print("Accuracy is: ", accuracy)
+    print("Precision is: ", precision)
+    print("Recall is: ", recall)
+    l = [precision, recall]
+    print("F1 Measure is: ", st.harmonic_mean(l))
 
 
 def test():
@@ -318,9 +343,10 @@ def test():
     data = df.values[0:100, :]
     # print(data)
     
-    splitPoint, avgEntropy = calcAttrAvgEntropy(data, 0)
-    print("For col 0 splitPoint is: ", splitPoint, " & entropy is: ", avgEntropy)
-
+    splitVal, avgEntropy = calcNumAttrAvgEntropy(data, 0)
+    print("For col 0 splitPoint is: ", splitVal, " & entropy is: ", avgEntropy)
+    data = modifyNumAttr(data, 0, splitVal)
+    print(data)
 
 # Note : Handling of blank values in test example remianing
 # main segment starts here
