@@ -33,7 +33,7 @@ class LeafNode:
 def splitTrainTest(df, testSize):
     if isinstance(testSize, float):
         testSize = round(testSize*len(df))
-
+    # random.seed(0)
     indices = df.index.tolist()
     randIndices = random.sample(population=indices, k=testSize)
     testData = df.loc[randIndices]
@@ -143,10 +143,12 @@ def buildDecisionTree(data, headerList, depth, edgeLabel):
             newData = data[data[:, index] == feature]
             # dropping the selected attribute
             newData = np.delete(newData, index, axis=1)
-            childNode = buildDecisionTree(newData, headerList, depth+1, feature)
+
+            childNode = buildDecisionTree(newData, headerList, depth+1, feature)    # Recursion
+            
             root.positives += childNode.positives
             root.negatives += childNode.negatives
-            root.childDict.update({uniqueFeatureValues[i]:childNode})
+            root.childDict.update({feature:childNode})
 
         return root
 
@@ -175,12 +177,14 @@ def validateExample(root, header, example):
                 return 0
         
 
-# Note : Handling of blank values in test example remianing
-# main segment starts here
-if __name__ == '__main__':
+def main():
     df = pd.read_csv("data.csv")
-    # trainData, testData = splitTrainTest(df, 0.2)
-    trainData, testData = df,df
+    # satisfaction_level	last_evaluation	number_project	average_montly_hours	time_spend_company	Work_accident	promotion_last_5years	department	salary	left
+    # , 'time_spend_company'
+    df = df.drop(['satisfaction_level', 'last_evaluation','number_project', 'average_montly_hours', 'time_spend_company'], axis=1)
+    # print(df)
+    trainData, testData = splitTrainTest(df, 0.2)
+    # trainData, testData = df,df
     # data = trainData.values[:, 4:10]
     data = trainData.values
     headerList = df.columns.values
@@ -215,11 +219,16 @@ if __name__ == '__main__':
     print("True Positives: ", tp)
     
     accuracy = getAccuracy(tn, fp, fn, tp)         
-    precision = getPrecision(tp, fp)
-    recall = getRecall(tp, fn)
+    # precision = getPrecision(tp, fp)
+    # recall = getRecall(tp, fn)
 
     print("Accuracy is: ", accuracy)
-    print("Precision is: ", precision)
-    print("Recall is: ", recall)
-    l = [precision, recall]
-    print("F1 Measure is: ", st.harmonic_mean(l))
+    # print("Precision is: ", precision)
+    # print("Recall is: ", recall)
+    # l = [precision, recall]
+    # print("F1 Measure is: ", st.harmonic_mean(l))
+
+# Note : Handling of blank values in test example remianing
+# main segment starts here
+if __name__ == '__main__':
+    main()

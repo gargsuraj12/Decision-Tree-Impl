@@ -30,8 +30,6 @@ class InternalNode:
         self.attributeName = attrName
         self.childDict = {}
         self.isNodeNumerical = False
-        # self.leftChild = None
-        # self.rightChild = None
         self.splitVal = splitVal
         self.positives = 0
         self.negatives = 0
@@ -43,7 +41,7 @@ class LeafNode:
         self.positives = positives
         self.negatives = negatives
 
-
+# Replacing the values of the numerical attribute with 0s and 1s
 def modifyNumAttr(data, colNum, splitVal):
     rows,_ = data.shape
     for i in range(rows):
@@ -80,7 +78,6 @@ def isDataPure(data):
 def setLabel(data):
     leftCol = data[:,-1]
     uniqueLabels, labelCounts = np.unique(leftCol, return_counts=True)
-    # print(uniqueLabels, labelCounts)
     label = 0
     positives = 0
     negatives = 0
@@ -99,7 +96,7 @@ def setLabel(data):
     leaf = LeafNode(label, positives, negatives)
     return leaf  
 
-
+# Splits the numerical attribute on the basis of the value
 def splitNumAttr(data, colNum, val):
     dataBelow = list()
     dataAbove = list()
@@ -163,24 +160,27 @@ def calcCatAttrAvgEntropy(data, colNum):
 
 # Best splits(Using Bruteforce Method) the numerical attribute and calculates the average entropy
 def calcNumAttrAvgEntropy(data, colNum):
+    totalRows,_ = data.shape
     column = data[:, colNum]
     splitPoint = None
     avgEntropy = 1000000
     uniqueFeatureValues = np.unique(column)
+    
     # Find the best split position for this column
-    for val in uniqueFeatureValues:
-        # columnData = copy.deepcopy(data[:, colNum])
+    for i in range(1, len(uniqueFeatureValues)):
+        val = (uniqueFeatureValues[i-1] + uniqueFeatureValues[i])/2
         dataBelow, dataAbove = splitNumAttr(data, colNum, val)
         belowEntropy = calcOverallEntropy(dataBelow)
         aboveEntropy = calcOverallEntropy(dataAbove)
-        t_entropy = belowEntropy + (aboveEntropy-belowEntropy)/2
-        # print("Entropy for ", val, " is: ", t_entropy)
+        belowRows = len(dataBelow)
+        aboveRows = len(dataAbove)
+        # t_entropy = (aboveEntropy + belowEntropy)/2
+        t_entropy = belowEntropy*(belowRows/totalRows) + aboveEntropy*(aboveRows/totalRows)
         if t_entropy < avgEntropy:
             avgEntropy = t_entropy
             splitPoint = val
-    # print("Final entropy for value: ", splitPoint, " is: ", avgEntropy)
-    return splitPoint, avgEntropy
 
+    return splitPoint, avgEntropy
 
 
 # Return the index of the attribute having the maximun information gain with the supplied data
@@ -221,6 +221,7 @@ def buildDecisionTree(data, headerList, depth, edgeLabel):
         attrName = headerList[index]
         root = InternalNode(attrName, splitVal)
 
+        # Cheking if the selected attibute is numerical attribute
         if category_dict[headerList[index]] == NUM_ATTR:
             root.isNodeNumerical = True
             data = modifyNumAttr(data, index, splitVal)
@@ -254,8 +255,6 @@ def validateExample(root, header, example):
     # Recurse
     else:
         index = header.index(root.attributeName)
-        # val = example[index]    
-        newRoot = None
         header.pop(index)
         feature = example[index]
         if root.isNodeNumerical == True:
@@ -289,13 +288,13 @@ def main():
             category_dict[headerList[i]] = CAT_ATTR
         else:
             category_dict[headerList[i]] = NUM_ATTR
-
-    # print(category_dict)        
+    
     # Call to build decision tree
     root = buildDecisionTree(data, headerList, 1, None)
 
     tp, tn, fp, fn = 0, 0, 0, 0
 
+    # Running validation set
     for i in range(len(testData)):
         actual = testData.values[i, :][-1]
         header = list(headerList)
