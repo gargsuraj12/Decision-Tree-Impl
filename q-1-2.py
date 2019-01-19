@@ -6,7 +6,7 @@ from pprint import pprint
 import statistics as st
 import copy
 
-CAT_ATTR_THRESHOLD = 10
+CAT_ATTR_THRESHOLD = 5
 LESS_THAN_EQUAL = 0
 GREATER_THAN = 1
 CAT_ATTR = 0
@@ -167,8 +167,8 @@ def calcNumAttrAvgEntropy(data, colNum):
     uniqueFeatureValues = np.unique(column)
     
     # Find the best split position for this column
-    for i in range(1, len(uniqueFeatureValues)):
-        val = (uniqueFeatureValues[i-1] + uniqueFeatureValues[i])/2
+    for val in uniqueFeatureValues:
+        # val = (uniqueFeatureValues[i-1] + uniqueFeatureValues[i])/2
         dataBelow, dataAbove = splitNumAttr(data, colNum, val)
         belowEntropy = calcOverallEntropy(dataBelow)
         aboveEntropy = calcOverallEntropy(dataAbove)
