@@ -3,7 +3,8 @@ import pandas as pd
 import random
 import statistics as st
 import queue
-import seaborn as sb
+import seaborn as sns
+
 
 CAT_ATTR_THRESHOLD = 10
 LESS_THAN_EQUAL = 0
@@ -365,6 +366,7 @@ def main(maxNodes, maxHeight, impurityType):
     #merging positive and negative data split so that training and validation dataset contains equal number of positive and negative value of feature label 
     trainData = pd.concat([posTrainData, negTrainData])
     testData = pd.concat([posTestData, negTestData])
+    
     # trainData, testData = splitTrainTest(df, 0.2)
     # trainData, testData = df,df
     data = trainData.values
@@ -416,87 +418,93 @@ def main(maxNodes, maxHeight, impurityType):
     error = getError(tn, fp, fn, tp)      
     precision = getPrecision(tp, fp)
     recall = getRecall(tp, fn)
-    l = [precision, recall]
-    f1Measure = st.harmonic_mean(l)
 
     print("Accuracy is: ", accuracy)
     print("Error is: ", error)
     print("Precision is: ", precision)
     print("Recall is: ", recall)
+    l = [precision, recall]
+    print("F1 Measure is: ", st.harmonic_mean(l))
+    return error
+
+def test():
+    df = pd.read_csv("data.csv")
+    # trainData, testData = splitTrainTest(df, 0.01)
+    data = df.values[0:100, :]
+    print(data)
+    splitPoint, avgImpurity = calcNumAttrAvgImpurity(data, 2, MISCLASSIFICATION_RATE)
+    print("SplitPoint is: ", splitPoint, " and MiscRate is: ", avgImpurity)
     
-    print("F1 Measure is: ", f1Measure)
-    return accuracy, precision, recall
 
 if __name__ == '__main__':
     # test()
-    maxHeight = 10
+    print("+++++++++++++++ Calcualating output for various heights ++++++++++++++++")
+    print("===================================================================================================")
+    maxHeight = 4
     maxNodes = 2000
-    iterationList = []
-
-    entropyAccuracyList = []
-    giniAccuracyList = []
-    miscAccuracyList = []
-
-    entropyRecallList = []
-    giniRecallList = []
-    miscRecallList = []
-    
-    entropyPrecisionList = []
-    giniPrecisionList = []
-    miscPrecisionList = []
-    for itr in range(10):
-        iterationList.append(itr)
+    heightList = []
+    entropyList = []
+    giniList = []
+    miscList = []
+    while maxHeight <= 10:
+        heightList.append(maxHeight)
         for i in range(3):
-            accuracy, precision, recall = main(maxNodes, maxHeight, i)
-            print("-----------------------------------------------------------------------------------------")
+            print("For Max Height: ", maxHeight)
+            error = main(maxNodes, maxHeight, i)
             if i == ENTROPY:
-                entropyAccuracyList.append(accuracy)
-                entropyPrecisionList.append(precision)
-                entropyRecallList.append(recall)
+                entropyList.append(error)
             elif i == GINI_IMPURITY:
-                giniAccuracyList.append(accuracy)
-                giniPrecisionList.append(precision)
-                giniRecallList.append(recall)
+                giniList.append(error)
             else:
-                miscAccuracyList.append(accuracy)
-                miscPrecisionList.append(precision)
-                miscRecallList.append(recall)
+                miscList.append(error)        
+            print("-----------------------------------------------------------------------------------------")
+        maxHeight += 1
+    
 
-    # Plotting graph for Accuracy against various iterations
-    tAccuracy = pd.DataFrame(
-    {'Iterations': iterationList,
-     'Entropy': entropyAccuracyList,
-     'Gini': giniAccuracyList,
-     'Misclassification': miscAccuracyList
+    # Plotting graph against various heights
+    heightVsError = pd.DataFrame(
+    {'Height': heightList,
+     'Entropy': entropyList,
+     'Gini': giniList,
+     'Misclassification': miscList
     })
     
-    # Accuracy visualisation
-    tAccuracy = tAccuracy.melt('Iterations', var_name='Impurity Measure',  value_name='Accuracy')
-    accuracyGraph = sb.factorplot(x="Iterations", y="Accuracy", hue='Impurity Measure', data=tAccuracy)
-    accuracyGraph.savefig("P3_Accuracy.png")        
+    #Accuracy visualisation
+    heightVsError = heightVsError.melt('Height', var_name='Impurity Measure',  value_name='Error')
+    heightVsError_graph = sns.catplot(x="Height", y="Error", hue='Impurity Measure', data=heightVsError)
+    heightVsError_graph.savefig("P5_HeightVsError.png")
 
-    # Plotting graph for Precision against various iterations
-    tPrecision = pd.DataFrame(
-    {'Iterations': iterationList,
-     'Entropy': entropyPrecisionList,
-     'Gini': giniPrecisionList,
-     'Misclassification': miscPrecisionList
+    print("+++++++++++++++ Calcualating output for various Nodes ++++++++++++++++")
+    print("===================================================================================================")
+    maxHeight = 20
+    maxNodes =  100
+    nodeList = []    
+    entropyList = []
+    giniList = []
+    miscList = [] 
+    while maxNodes <= 1000:
+        nodeList.append(maxNodes)
+        for i in range(3):
+            print("For Max Nodes: ", maxNodes)
+            error = main(maxNodes, maxHeight, i)
+            if i == ENTROPY:
+                entropyList.append(error)
+            elif i == GINI_IMPURITY:
+                giniList.append(error)
+            else:
+                miscList.append(error)
+            print("-----------------------------------------------------------------------------------------")
+        maxNodes += 100
+    
+    # Plotting graph against various nodes
+    nodesVsError = pd.DataFrame(
+    {'Nodes': nodeList,
+     'Entropy': entropyList,
+     'Gini': giniList,
+     'Misclassification': miscList
     })
     
-    # Precision visualisation
-    tPrecision = tPrecision.melt('Iterations', var_name='Impurity Measure',  value_name='Precision')
-    precisionGraph = sb.factorplot(x="Iterations", y="Precision", hue='Impurity Measure', data=tPrecision)
-    precisionGraph.savefig("P3_Precision.png")
-
-    # Plotting graph for Recall against various iterations
-    tRecall = pd.DataFrame(
-    {'Iterations': iterationList,
-     'Entropy': entropyRecallList,
-     'Gini': giniRecallList,
-     'Misclassification': miscRecallList
-    })
-    
-    # Recall visualisation
-    tRecall = tRecall.melt('Iterations', var_name='Impurity Measure',  value_name='Recall')
-    recallGraph = sb.factorplot(x="Iterations", y="Recall", hue='Impurity Measure', data=tRecall)
-    recallGraph.savefig("P3_Recall.png")
+    #Accuracy visualisation
+    nodesVsError = nodesVsError.melt('Nodes', var_name='Impurity Measure',  value_name='Error')
+    nodesVsError_graph = sns.catplot(x="Nodes", y="Error", hue='Impurity Measure', data=nodesVsError)
+    nodesVsError_graph.savefig("P5_NodesVsError.png")

@@ -275,9 +275,22 @@ def validateExample(root, header, example):
                 return 0
         
 
+# Note : Handling of blank values in test example remianing
+# main segment starts here
 def main():
     df = pd.read_csv("data.csv")
-    trainData, testData = splitTrainTest(df, 0.2)
+    posData = df.loc[df['left'] == 0]
+    negData = df.loc[df['left'] == 1]
+    
+    #spliting positive and negative dataset into randomly 80-20 % split
+    posTrainData, posTestData = splitTrainTest(posData, 0.2)
+    negTrainData, negTestData = splitTrainTest(negData, 0.2)
+    
+    #merging positive and negative data split so that training and validation dataset contains equal number of positive and negative value of feature label 
+    trainData = pd.concat([posTrainData, negTrainData])
+    testData = pd.concat([posTestData, negTestData])
+
+    # trainData, testData = splitTrainTest(df, 0.2)
     # trainData, testData = df,df
     data = trainData.values
     headerList = df.columns.values
@@ -325,19 +338,5 @@ def main():
     print("F1 Measure is: ", st.harmonic_mean(l))
 
 
-def test():
-    df = pd.read_csv("data.csv")
-    # trainData, testData = splitTrainTest(df, 0.01)
-    data = df.values[0:100, :]
-    # print(data)
-    
-    splitVal, avgEntropy = calcNumAttrAvgEntropy(data, 0)
-    print("For col 0 splitPoint is: ", splitVal, " & entropy is: ", avgEntropy)
-    data = modifyNumAttr(data, 0, splitVal)
-    print(data)
-
-# Note : Handling of blank values in test example remianing
-# main segment starts here
 if __name__ == '__main__':
     main()
-    # test()
