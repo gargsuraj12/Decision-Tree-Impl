@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import random
 from pprint import pprint
 import statistics as st
-import copy
+import copy, sys
 
 CAT_ATTR_THRESHOLD = 5
 LESS_THAN_EQUAL = 0
@@ -59,9 +59,9 @@ def splitTrainTest(df, testSize):
 
     indices = df.index.tolist()
     randIndices = random.sample(population=indices, k=testSize)
-    testData = df.loc[randIndices]
+    valData = df.loc[randIndices]
     trainData = df.drop(randIndices)    
-    return trainData, testData
+    return trainData, valData
 
 
 # Checks whether the current class has pure data
@@ -277,42 +277,17 @@ def validateExample(root, header, example):
 
 # Note : Handling of blank values in test example remianing
 # main segment starts here
-def main():
-    df = pd.read_csv("data.csv")
-    posData = df.loc[df['left'] == 0]
-    negData = df.loc[df['left'] == 1]
-    
-    #spliting positive and negative dataset into randomly 80-20 % split
-    posTrainData, posTestData = splitTrainTest(posData, 0.2)
-    negTrainData, negTestData = splitTrainTest(negData, 0.2)
-    
-    #merging positive and negative data split so that training and validation dataset contains equal number of positive and negative value of feature label 
-    trainData = pd.concat([posTrainData, negTrainData])
-    testData = pd.concat([posTestData, negTestData])
-
-    # trainData, testData = splitTrainTest(df, 0.2)
-    # trainData, testData = df,df
-    data = trainData.values
-    headerList = df.columns.values
-    _,cols = data.shape
-    for i in range(cols):
-        uniqueFeatureValues = np.unique(data[:, i])
-        if len(uniqueFeatureValues) <= CAT_ATTR_THRESHOLD:
-            category_dict[headerList[i]] = CAT_ATTR
-        else:
-            category_dict[headerList[i]] = NUM_ATTR
-    
-    # Call to build decision tree
-    root = buildDecisionTree(data, headerList, 1, None)
+def main(root, valData):
 
     tp, tn, fp, fn = 0, 0, 0, 0
-
+    predictedList = []
     # Running validation set
-    for i in range(len(testData)):
-        actual = testData.values[i, :][-1]
+    for i in range(len(valData)):
+        actual = valData.values[i, :][-1]
         header = list(headerList)
-        example  = testData.values[i, 0:9]
+        example  = valData.values[i, 0:9]
         predicted = validateExample(root, header, example)
+        predictedList.append(predicted)
         if actual == 0 and predicted == 0:
             tn += 1
         elif actual == 0 and predicted == 1:
@@ -322,6 +297,8 @@ def main():
         else:
             tp += 1
 
+    valData.insert(len(df.columns), "Predicted", predictedList)
+    # print(valData)
     print("True Negatives: ", tn)
     print("False Positves: ", fp)
     print("False Negatives: ", fn)
@@ -339,4 +316,44 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    if len(sys.argv) <= 1:
+        print("Test File not supplied as an arguement..")
+        quit()
+    try:
+        testDf = pd.read_csv(sys.argv[1])
+        # testDf = testDf.drop(['satisfaction_level', 'last_evaluation', 'average_montly_hours'], axis=1)
+    except FileNotFoundError:
+        print("Error: No CSV file exist at '", sys.argv[1], "'")
+        quit()
+
+    df = pd.read_csv("data.csv")
+    posData = df.loc[df['left'] == 0]
+    negData = df.loc[df['left'] == 1]
+    
+    #spliting positive and negative dataset into randomly 80-20 % split
+    posTrainData, posTestData = splitTrainTest(posData, 0.2)
+    negTrainData, negTestData = splitTrainTest(negData, 0.2)
+    
+    #merging positive and negative data split so that training and validation dataset contains equal number of positive and negative value of feature label 
+    trainData = pd.concat([posTrainData, negTrainData])
+    valData = pd.concat([posTestData, negTestData])
+
+    # trainData, valData = splitTrainTest(df, 0.2)
+    # trainData, valData = df,df
+    data = trainData.values
+    headerList = df.columns.values
+    _,cols = data.shape
+    for i in range(cols):
+        uniqueFeatureValues = np.unique(data[:, i])
+        if len(uniqueFeatureValues) <= CAT_ATTR_THRESHOLD:
+            category_dict[headerList[i]] = CAT_ATTR
+        else:
+            category_dict[headerList[i]] = NUM_ATTR
+    
+    # Call to build decision tree
+    root = buildDecisionTree(data, headerList, 1, None)
+    print("*************** For validation data ***************")
+    main(root, valData)
+    print("*************** For Test Data ***********************")
+    main(root, testDf)
+

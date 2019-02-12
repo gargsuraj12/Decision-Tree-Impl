@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import random
 import statistics as st
-import queue
+import queue, sys
 import seaborn as sb
 
 CAT_ATTR_THRESHOLD = 10
@@ -69,9 +69,9 @@ def splitTrainTest(df, testSize):
 
     indices = df.index.tolist()
     randIndices = random.sample(population=indices, k=testSize)
-    testData = df.loc[randIndices]
+    valData = df.loc[randIndices]
     trainData = df.drop(randIndices)    
-    return trainData, testData
+    return trainData, valData
 
 
 # Checks whether the current class has pure data
@@ -225,7 +225,6 @@ def calcNumAttrAvgImpurity(data, colNum, impurityType):
     return splitPoint, avgImpurity
 
 
-
 # Return the index of the attribute having the maximun information gain with the supplied data
 def nextParentNodeAttribute(data, headerList, impurityType):
     if impurityType == ENTROPY:
@@ -353,51 +352,17 @@ def PrintTree(root):
 
 # Note : Handling of blank values in test example remianing
 # main segment starts here
-def main(maxNodes, maxHeight, impurityType):
-    df = pd.read_csv("data.csv")
-    posData = df.loc[df['left'] == 0]
-    negData = df.loc[df['left'] == 1]
-    
-    #spliting positive and negative dataset into randomly 80-20 % split
-    posTrainData, posTestData = splitTrainTest(posData, 0.2)
-    negTrainData, negTestData = splitTrainTest(negData, 0.2)
-    
-    #merging positive and negative data split so that training and validation dataset contains equal number of positive and negative value of feature label 
-    trainData = pd.concat([posTrainData, negTrainData])
-    testData = pd.concat([posTestData, negTestData])
-    # trainData, testData = splitTrainTest(df, 0.2)
-    # trainData, testData = df,df
-    data = trainData.values
-    headerList = df.columns.values
-    _,cols = data.shape
-    for i in range(cols):
-        uniqueFeatureValues = np.unique(data[:, i])
-        if len(uniqueFeatureValues) <= CAT_ATTR_THRESHOLD:
-            category_dict[headerList[i]] = CAT_ATTR
-        else:
-            category_dict[headerList[i]] = NUM_ATTR
-    
-    # Call to build decision tree
-    nodes = [0]
-    impurityName = None
-    if impurityType == 0:
-        impurityName = "Entropy"
-    elif impurityType == 1:
-        impurityName = "GINI Impurity"
-    else:
-        impurityName = "Misclassification Rate"
-    print("Impurity Type: ", impurityName)
-    height, root = buildDecisionTree(data, headerList, 0, nodes, impurityType, maxNodes, maxHeight)
-    print("Actual Height is: ", height, " and total nodes are: ", nodes[0])
+def main(root, valData):
 
     tp, tn, fp, fn = 0, 0, 0, 0
-
+    predictedList = []
     # Running validation set
-    for i in range(len(testData)):
-        actual = testData.values[i, :][-1]
+    for i in range(len(valData)):
+        actual = valData.values[i, :][-1]
         header = list(headerList)
-        example  = testData.values[i, 0:9]
+        example  = valData.values[i, 0:9]
         predicted = validateExample(root, header, example)
+        predictedList.append(predicted)
         if actual == 0 and predicted == 0:
             tn += 1
         elif actual == 0 and predicted == 1:
@@ -406,7 +371,9 @@ def main(maxNodes, maxHeight, impurityType):
             fn += 1
         else:
             tp += 1
-
+    
+    valData.insert(len(df.columns), "Predicted", predictedList)
+    # print(valData)
     print("True Negatives: ", tn)
     print("False Positves: ", fp)
     print("False Negatives: ", fn)
@@ -428,75 +395,45 @@ def main(maxNodes, maxHeight, impurityType):
     return accuracy, precision, recall
 
 if __name__ == '__main__':
-    # test()
+    if len(sys.argv) <= 1:
+        print("Test File not supplied as an arguement..")
+        quit()
+    try:
+        testDf = pd.read_csv(sys.argv[1])
+    except FileNotFoundError:
+        print("Error: No CSV file exist at '", sys.argv[1], "'")
+        quit()
+
+    df = pd.read_csv("data.csv")
+    posData = df.loc[df['left'] == 0]
+    negData = df.loc[df['left'] == 1]
+    
+    # spliting positive and negative dataset into randomly 80-20 % split
+    posTrainData, posTestData = splitTrainTest(posData, 0.2)
+    negTrainData, negTestData = splitTrainTest(negData, 0.2)
+    
+    # merging positive and negative data split so that training and validation dataset contains equal number of positive and negative value of feature label 
+    trainData = pd.concat([posTrainData, negTrainData])
+    valData = pd.concat([posTestData, negTestData])
+    data = trainData.values
+    headerList = df.columns.values
+    _,cols = data.shape
+    for i in range(cols):
+        uniqueFeatureValues = np.unique(data[:, i])
+        if len(uniqueFeatureValues) <= CAT_ATTR_THRESHOLD:
+            category_dict[headerList[i]] = CAT_ATTR
+        else:
+            category_dict[headerList[i]] = NUM_ATTR
+
     maxHeight = 10
     maxNodes = 2000
-    iterationList = []
 
-    entropyAccuracyList = []
-    giniAccuracyList = []
-    miscAccuracyList = []
-
-    entropyRecallList = []
-    giniRecallList = []
-    miscRecallList = []
-    
-    entropyPrecisionList = []
-    giniPrecisionList = []
-    miscPrecisionList = []
-    for itr in range(10):
-        iterationList.append(itr)
-        for i in range(3):
-            accuracy, precision, recall = main(maxNodes, maxHeight, i)
-            print("-----------------------------------------------------------------------------------------")
-            if i == ENTROPY:
-                entropyAccuracyList.append(accuracy)
-                entropyPrecisionList.append(precision)
-                entropyRecallList.append(recall)
-            elif i == GINI_IMPURITY:
-                giniAccuracyList.append(accuracy)
-                giniPrecisionList.append(precision)
-                giniRecallList.append(recall)
-            else:
-                miscAccuracyList.append(accuracy)
-                miscPrecisionList.append(precision)
-                miscRecallList.append(recall)
-
-    # Plotting graph for Accuracy against various iterations
-    tAccuracy = pd.DataFrame(
-    {'Iterations': iterationList,
-     'Entropy': entropyAccuracyList,
-     'Gini': giniAccuracyList,
-     'Misclassification': miscAccuracyList
-    })
-    
-    # Accuracy visualisation
-    tAccuracy = tAccuracy.melt('Iterations', var_name='Impurity Measure',  value_name='Accuracy')
-    accuracyGraph = sb.factorplot(x="Iterations", y="Accuracy", hue='Impurity Measure', data=tAccuracy)
-    accuracyGraph.savefig("P3_Accuracy.png")        
-
-    # Plotting graph for Precision against various iterations
-    tPrecision = pd.DataFrame(
-    {'Iterations': iterationList,
-     'Entropy': entropyPrecisionList,
-     'Gini': giniPrecisionList,
-     'Misclassification': miscPrecisionList
-    })
-    
-    # Precision visualisation
-    tPrecision = tPrecision.melt('Iterations', var_name='Impurity Measure',  value_name='Precision')
-    precisionGraph = sb.factorplot(x="Iterations", y="Precision", hue='Impurity Measure', data=tPrecision)
-    precisionGraph.savefig("P3_Precision.png")
-
-    # Plotting graph for Recall against various iterations
-    tRecall = pd.DataFrame(
-    {'Iterations': iterationList,
-     'Entropy': entropyRecallList,
-     'Gini': giniRecallList,
-     'Misclassification': miscRecallList
-    })
-    
-    # Recall visualisation
-    tRecall = tRecall.melt('Iterations', var_name='Impurity Measure',  value_name='Recall')
-    recallGraph = sb.factorplot(x="Iterations", y="Recall", hue='Impurity Measure', data=tRecall)
-    recallGraph.savefig("P3_Recall.png")
+    # Call to build decision tree using ENTROPY as a measure
+    nodes = [0]
+    print("Impurity Type: ENTROPY")
+    height, root = buildDecisionTree(data, headerList, 0, nodes, ENTROPY, maxNodes, maxHeight)
+    print("Actual Height is: ", height, " and total nodes are: ", nodes[0])
+    print("*************** For validation data ***************")
+    main(root, valData)
+    print("*************** For Test Data ***********************")
+    main(root, testDf)

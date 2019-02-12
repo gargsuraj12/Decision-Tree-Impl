@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import random
 from pprint import pprint
 import statistics as st
+import sys
 
 def getAccuracy(tn, fp, fn, tp):
     num = tp+tn
@@ -36,9 +37,9 @@ def splitTrainTest(df, testSize):
     # random.seed(0)
     indices = df.index.tolist()
     randIndices = random.sample(population=indices, k=testSize)
-    testData = df.loc[randIndices]
+    valData = df.loc[randIndices]
     trainData = df.drop(randIndices)    
-    return trainData, testData
+    return trainData, valData
 
 # Checks whether the current class has pure data
 def isDataPure(data):
@@ -177,11 +178,59 @@ def validateExample(root, header, example):
                 return 0
         
 
-def main():
+def main(root, testData):
+
+    tp, tn, fp, fn = 0, 0, 0, 0
+    predictedList = []
+    for i in range(len(testData)):
+        actual = testData.values[i, :][-1]
+        header = list(headerList)
+        example  = testData.values[i, 0:9]
+        predicted = validateExample(root, header, example)
+        predictedList.append(predicted)
+        if actual == 0 and predicted == 0:
+            tn += 1
+        elif actual == 0 and predicted == 1:
+            fp += 1
+        elif actual == 1 and predicted == 0:
+            fn += 1
+        else:
+            tp += 1
+            
+    testData.insert(len(df.columns), "Predicted", predictedList)
+    # print(valData)
+    print("True Negatives: ", tn)
+    print("False Positves: ", fp)
+    print("False Negatives: ", fn)
+    print("True Positives: ", tp)
+    
+    accuracy = getAccuracy(tn, fp, fn, tp)         
+    precision = getPrecision(tp, fp)
+    recall = getRecall(tp, fn)
+
+    print("Accuracy is: ", accuracy)
+    print("Precision is: ", precision)
+    print("Recall is: ", recall)
+    l = [precision, recall]
+    print("F1 Measure is: ", st.harmonic_mean(l))
+
+# Note : Handling of blank values in test example remianing
+# main segment starts here
+if __name__ == '__main__':
+    if len(sys.argv) <= 1:
+        print("Test File not supplied as an arguement..")
+        quit()
+    try:
+        testDf = pd.read_csv(sys.argv[1])
+        testDf = testDf.drop(['satisfaction_level', 'last_evaluation', 'average_montly_hours'], axis=1)
+    except FileNotFoundError:
+        print("Error: No CSV file exist at '", sys.argv[1], "'")
+        quit()
+
     df = pd.read_csv("data.csv")
     # satisfaction_level	last_evaluation	number_project	average_montly_hours	time_spend_company	Work_accident	promotion_last_5years	department	salary	left
     # , 'time_spend_company'
-    df = df.drop(['satisfaction_level', 'last_evaluation','number_project', 'average_montly_hours', 'time_spend_company'], axis=1)
+    df = df.drop(['satisfaction_level', 'last_evaluation', 'average_montly_hours'], axis=1)
 
     posData = df.loc[df['left'] == 0]
     negData = df.loc[df['left'] == 1]
@@ -192,50 +241,14 @@ def main():
     
     #merging positive and negative data split so that training and validation dataset contains equal number of positive and negative value of feature label 
     trainData = pd.concat([posTrainData, negTrainData])
-    testData = pd.concat([posTestData, negTestData])
-    # trainData, testData = splitTrainTest(df, 0.2)
-    # trainData, testData = df,df
-    # data = trainData.values[:, 4:10]
+    valData = pd.concat([posTestData, negTestData])
+    
     data = trainData.values
     headerList = df.columns.values
-    # headerList = headerList[4:]
     
     # Call to build decision tree
     root = buildDecisionTree(data, headerList, 1, None)
-
-    tp, tn, fp, fn = 0, 0, 0, 0
-
-    for i in range(len(testData)):
-        actual = testData.values[i, :][-1]
-        header = list(headerList)
-        # example  = testData.values[i, 4:9]
-        example  = testData.values[i, 0:9]
-        predicted = validateExample(root, header, example)
-        if actual == 0 and predicted == 0:
-            tn += 1
-        elif actual == 0 and predicted == 1:
-            fp += 1
-        elif actual == 1 and predicted == 0:
-            fn += 1
-        else:
-            tp += 1
-
-    print("True Negatives: ", tn)
-    print("False Positves: ", fp)
-    print("False Negatives: ", fn)
-    print("True Positives: ", tp)
-    
-    accuracy = getAccuracy(tn, fp, fn, tp)         
-    # precision = getPrecision(tp, fp)
-    # recall = getRecall(tp, fn)
-
-    print("Accuracy is: ", accuracy)
-    # print("Precision is: ", precision)
-    # print("Recall is: ", recall)
-    # l = [precision, recall]
-    # print("F1 Measure is: ", st.harmonic_mean(l))
-
-# Note : Handling of blank values in test example remianing
-# main segment starts here
-if __name__ == '__main__':
-    main()
+    print("*************** For validation data ***************")
+    main(root, valData)
+    print("*************** For Test Data ***********************")
+    main(root, testDf)
